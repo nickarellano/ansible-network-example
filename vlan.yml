@@ -1,0 +1,76 @@
+---
+- name: "Network Demo: VLANs"
+  hosts: all
+  gather_facts: false
+  connection: local
+  become: true
+
+  tasks:
+    - name: "Collect all of the tagged and untagged VLANs from the host variables"
+      ansible.builtin.set_fact:
+        parsed_vlans: "{{ (interfaces | map(attribute='untagged_vlan') + interfaces | map(attribute='tagged_vlans')) | select() | flatten() | unique }}"
+
+    - name: "Debug the vlans"
+      ansible.builtin.debug:
+        msg: "{{ parsed_vlans }}"
+
+    - name: "If no VLANs are used in the host variables, ensure the VLAN table is empty"
+      when: parsed_vlans | length == 0
+      block:
+        - name: "Ensure the VLAN table is empty"
+          cisco.ios.ios_vlans:
+            state: deleted
+
+        - name: "Ensure the L2 interface settings are cleared"
+          cisco.ios.ios_l2_interfaces:
+            state: deleted
+
+    - name: "If VLANs are present, ensure they are configured"
+      when: parsed_vlans | length > 0
+      block:
+        - name: "Ensure the parsed_vlans are in a json format"
+          ansible.builtin.set_fact:
+            parsed_vlans: >
+              [{% for vlan in parsed_vlans %}
+              {
+                "name": "{{ vlan.name }}",
+                "vlan_id": "{{ vlan.vid }}"
+              }{% if not loop.last %},{% endif %}
+              {% endfor %}]
+
+        - name: "Ensure the VLANs are configured in the VLAN table of the switch"
+          cisco.ios.ios_vlans:
+            config: "{{ parsed_vlans }}"
+            state: overridden
+
+        - name: "Parse the interface list to collect tagged and untagged VLAN information"
+          ansible.builtin.set_fact:
+            parsed_interfaces: >
+              [{% for interface in interfaces %}
+              {% if interface.mode is mapping and interface.mode.value == 'tagged' %}
+              {
+                "name": "{{ interface.name }}",
+                "trunk": {
+                  "allowed_vlans": "{{ interface.tagged_vlans | map(attribute='vid') | list | join(',') }}",
+                  "encapsulation": "dot1q"
+                }
+              }{% if not loop.last %},{% endif %}
+              {% endif %}
+              {% if interface.mode is mapping and interface.untagged_vlan is not none and interface.mode.value == 'access' %}
+              {
+                "name": "{{ interface.name }}",
+                "access": {
+                  "vlan": "{{ interface.untagged_vlan.vid }}"
+                }
+              }{% if not loop.last %},{% endif %}
+              {% endif %}
+              {% endfor %}]
+
+        - name: "Debug the parsed interfaces"
+          ansible.builtin.debug:
+            msg: "{{ parsed_interfaces }}"
+
+        - name: "Ensure that the l2 interfaces are configured"
+          cisco.ios.ios_l2_interfaces:
+            config: "{{ parsed_interfaces }}"
+            state: overridden

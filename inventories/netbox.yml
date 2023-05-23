@@ -1,0 +1,11 @@
+plugin: netbox.netbox.nb_inventory
+
+interfaces: true
+
+group_by:
+  - device_roles
+  - device_types
+
+query_filters:
+  - has_primary_ip: true
+  - tag: "network-demo"

@@ -1,0 +1,47 @@
+---
+- name: "Network Demo: IPAM Inventory"
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  tasks:
+    - name: "Search for the inventory source with the name Netbox"
+      ansible.builtin.uri:
+        url: "https://{{ lookup('ansible.builtin.env', 'TOWER_HOST') }}/api/v2/inventory_sources?name=Netbox&source_path=inventories/netbox.yml&page_size=1"
+        force_basic_auth: true
+        user: "{{ lookup('ansible.builtin.env', 'TOWER_USERNAME') }}"
+        password: "{{ lookup('ansible.builtin.env', 'TOWER_PASSWORD') }}"
+        validate_certs: false
+        method: "GET"
+      register: inventory_source_lookup_response
+
+    - name: "Set the inventory update URL to a fact"
+      ansible.builtin.set_fact:
+        inventory_update_url: "{{ inventory_source_lookup_response.json.results[0].related['update'] }}"
+
+    - name: "Ensure the inventory source is updated"
+      ansible.builtin.uri:
+        url: "https://{{ lookup('ansible.builtin.env', 'TOWER_HOST') }}{{ inventory_update_url }}"
+        force_basic_auth: true
+        user: "{{ lookup('ansible.builtin.env', 'TOWER_USERNAME') }}"
+        password: "{{ lookup('ansible.builtin.env', 'TOWER_PASSWORD') }}"
+        validate_certs: false
+        method: "POST"
+        status_code:
+          - 202
+      register: inventory_update_request
+
+    - name: "Wait for the inventory update to complete"
+      ansible.builtin.uri:
+        url: "https://{{ lookup('ansible.builtin.env', 'TOWER_HOST') }}{{ inventory_update_request.json.related['inventory_source'] }}"
+        force_basic_auth: true
+        user: "{{ lookup('ansible.builtin.env', 'TOWER_USERNAME') }}"
+        password: "{{ lookup('ansible.builtin.env', 'TOWER_PASSWORD') }}"
+        validate_certs: false
+        method: "GET"
+        status_code:
+          - 200
+      register: syncronization_status
+      until: syncronization_status.json.status == "successful"
+      retries: 30
+      delay: 5

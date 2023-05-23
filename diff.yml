@@ -1,0 +1,15 @@
+- name: "Network Demo: Diff"
+  hosts: all
+  gather_facts: false
+  connection: local
+  become: true
+
+  tasks:
+    - name: "Check the running-config against the startup-config"
+      cisco.ios.ios_command:
+        commands: show archive config differences system:running-config nvram:startup-config
+      register: diff
+
+    - name: "Debug the configuration diff"
+      ansible.builtin.debug:
+        var: diff.stdout_lines

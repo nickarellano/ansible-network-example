@@ -1,0 +1,16 @@
+---
+- name: "Network Demo: Backups"
+  hosts: all
+  gather_facts: false
+  connection: local
+  become: true
+
+  tasks:
+    - name: "Register the running configuration to a variable"
+      cisco.ios.ios_command:
+        commands: show run
+      register: running_config
+
+    - name: "Debug the running configuration"
+      ansible.builtin.debug:
+        var: running_config.stdout_lines
